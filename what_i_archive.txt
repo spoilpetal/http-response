@@ -1,0 +1,91 @@
+         
+
+                   What this release have
+
+
+http_client.c is a working HTTP/1.1 client for plain HTTP only, :
+
+Parses argv[1] (host) and argv[2] (path). Usage check at top of main.
+
+WSAStartup, getaddrinfo(argv[1], "80"), TCP connect via loop over res.
+
+Builds request with snprintf into char request[512] containing:
+
+GET <path> HTTP/1.1
+
+Host: <host>
+
+User-Agent: BigFish/0.1
+
+Referer: https://www.example.com/
+
+Range: bytes=0-99
+
+Connection: close
+
+Sends raw request, saves all response bytes to raw_response.bin ("wb" — binary mode is critical on Windows).
+
+Re-opens raw_response.bin ("rb"), freads into char raw[16384].
+
+Scans for \r\n\r\n → header_end.
+
+body_start = header_end + 4.
+
+hex_value() helper parses hex digits.
+
+Chunked transfer decoding loop: parse hex size → verify \r\n → memcpy chunk data into char decoded[16384] → advance pos → verify trailer \r\n → repeat until chunk_size == 0.
+
+Writes decoded body to decoded_body.html.
+
+Cleans up with closesocket and WSACleanup.
+
+Verified working:
+
+http_client.exe example.com / → Sent 135 bytes, Body bytes: 571
+
+raw_response.bin = full wire response with headers + chunk framing + body
+
+decoded_body.html = 571 bytes of pure HTML, opens as real Example Domain page
+
+Zero warnings with gcc -Wall -Wextra
+
+--------------------------------
+Compile command:
+
+gcc -Wall -Wextra -o http_client.exe http_client.c -lws2_32
+
+--------------------------------
+
+:::::Custom Headers — Status:::::
+
+✅ User-Agent — sent, verified by byte count (56 → 81).
+
+✅ Referer — sent, verified by byte count (81 → 116).
+
+✅ Range — sent correctly (116 → 135). Server (Cloudflare fronting example.com) ignored it, returned 200 OK with full body instead of 206 Partial Content. This is valid behavior — Range is advisory, not a command.
+
+Known Limitations of Current Client
+
+Plain HTTP only. No HTTPS/TLS.
+
+Assumes body is always chunked. Fails on Content-Length responses (proven with iana.org — 301 redirect using Content-Length: 244).
+
+Assumes whole response fits in 16 KB buffer.
+
+Does not follow redirects (301/302).
+
+Does not parse individual headers — only finds \r\n\r\n.
+
+#define HOST "example.com" still in file but unused. Can delete.
+
+decoded_body.html filename differs from migration summary's body.html. Decide one.
+
+printf("Body bytes: %d\n", body_bytes); is cosmetic leftover, can delete with body_bytes variable.
+
+Hosts Tested
+
+example.com / → works, chunked, 571 body bytes.
+
+iana.org /domains/example → 301 redirect, Content-Length: 244, chunked parser fails (expected).
+
+neverssl.com / → connection reset 10054 on this network, do not rely on it.
